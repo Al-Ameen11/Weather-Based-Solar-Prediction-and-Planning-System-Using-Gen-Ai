@@ -1,0 +1,24 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import HomePage from './components/HomePage.jsx';
+import ResultsPage from './components/ResultsPage.jsx';
+import RecommendationPage from './components/RecommendationPage.jsx';
+import ChatBot from './components/ChatBot.jsx';
+import './App.css';
+
+function App() {
+  return (
+    <Router>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/results" element={<ResultsPage />} />
+          <Route path="/recommendations" element={<RecommendationPage />} />
+        </Routes>
+        <ChatBot />
+      </div>
+    </Router>
+  );
+}
+
+export default App;
