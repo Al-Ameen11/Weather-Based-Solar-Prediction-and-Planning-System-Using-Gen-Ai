@@ -47,6 +47,7 @@ function ResultsPage() {
 
   const details = [
     { label: 'Total System Cost', value: `₹${parseFloat(solarROI.totalCost).toLocaleString('en-IN')}` },
+    { label: 'Recommended Size', value: `${solarROI.recommendedSystemSizeKW || solarROI.systemSizeKW} kW` },
     { label: 'Government Subsidy', value: `₹${parseFloat(solarROI.subsidyAmount).toLocaleString('en-IN')} (${subsidy.subsidy}%)` },
     { label: 'Annual Savings', value: `₹${parseFloat(solarROI.annualSavings).toLocaleString('en-IN')}` },
     { label: 'Annual Generation', value: `${parseFloat(solarROI.annualGeneration).toLocaleString('en-IN')} kWh` },

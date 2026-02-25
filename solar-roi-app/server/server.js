@@ -11,16 +11,14 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Configuration - Replace with your actual API keys
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || 'YOUR_OPENWEATHER_API_KEY';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000/predict';
 
-// Local JSON file storage (no MongoDB required)
 const dataDir = path.join(__dirname, 'data');
 const predictionsFile = path.join(dataDir, 'predictions.json');
 
-// Solar subsidy data for Indian states (example data)
 const subsidyData = {
   'Tamil Nadu': { subsidy: 40, maxAmount: 40000, description: 'Up to 40% subsidy on solar panel installation' },
   Karnataka: { subsidy: 30, maxAmount: 30000, description: 'Up to 30% subsidy on solar panel installation' },
@@ -57,20 +55,13 @@ function savePrediction(record) {
   const records = loadPredictions();
   records.unshift(record);
 
-  // Keep only latest 100 records
   const trimmed = records.slice(0, 100);
   fs.writeFileSync(predictionsFile, JSON.stringify(trimmed, null, 2), 'utf-8');
 }
 
 function getSolarOutputCategory(annualGeneration) {
-  if (annualGeneration >= 6500) {
-    return 'High';
-  }
-
-  if (annualGeneration >= 3500) {
-    return 'Medium';
-  }
-
+  if (annualGeneration >= 6500) return 'High';
+  if (annualGeneration >= 3500) return 'Medium';
   return 'Low';
 }
 
@@ -96,6 +87,35 @@ function getApplianceRecommendations(outputCategory) {
   return base[outputCategory] || base.Medium;
 }
 
+async function callGemini(prompt) {
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY') {
+    return null;
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  const response = await axios.post(
+    endpoint,
+    {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }]
+        }
+      ]
+    },
+    {
+      headers: {
+        'x-goog-api-key': GEMINI_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      timeout: 12000
+    }
+  );
+
+  return response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+}
+
 async function getAiExplanation(contextPayload) {
   const {
     location,
@@ -106,36 +126,25 @@ async function getAiExplanation(contextPayload) {
     systemSizeKW
   } = contextPayload;
 
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY') {
-    return `For ${location}, your ${systemSizeKW} kW solar system is expected to deliver about ${annualGeneration} kWh/year (${outputCategory} output). With yearly savings near ₹${annualSavings}, your estimated payback is ${paybackPeriod} years. This indicates a practical long-term investment if daytime usage is optimized.`;
-  }
+  const fallback = `For ${location}, your ${systemSizeKW} kW solar system is expected to deliver about ${annualGeneration} kWh/year (${outputCategory} output). With yearly savings near ₹${annualSavings}, your estimated payback is ${paybackPeriod} years. This indicates a practical long-term investment if daytime usage is optimized.`;
 
-  const prompt = `Explain the following solar prediction in plain language for a homeowner in 3-4 lines.\nLocation: ${location}\nSystem size: ${systemSizeKW} kW\nEstimated annual generation: ${annualGeneration} kWh (${outputCategory})\nAnnual savings: ₹${annualSavings}\nPayback period: ${paybackPeriod} years\nKeep it practical and encouraging.`;
+  const prompt = `Explain the following solar prediction in plain language for a homeowner in 3-4 lines.
+Location: ${location}
+System size: ${systemSizeKW} kW
+Estimated annual generation: ${annualGeneration} kWh (${outputCategory})
+Annual savings: ₹${annualSavings}
+Payback period: ${paybackPeriod} years
+Keep it practical and encouraging.`;
 
   try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{ text: prompt }]
-        }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
-      }
-    );
-
-    return response.data?.candidates?.[0]?.content?.parts?.[0]?.text
-      || 'Solar results are ready. Consider reviewing appliance usage timing to maximize savings.';
+    return (await callGemini(prompt)) || fallback;
   } catch (error) {
-    console.error('Gemini explanation failed:', error.message);
-    return `For ${location}, your ${systemSizeKW} kW solar system is expected to generate about ${annualGeneration} kWh/year (${outputCategory} output), with savings of around ₹${annualSavings} per year and payback in ${paybackPeriod} years.`;
+    console.error('Gemini explanation failed:', error.response?.data || error.message);
+    return fallback;
   }
 }
 
 async function getMlSolarPrediction(temperature, cloudPercent) {
-  // Convert cloud cover to a rough irradiation factor in [0, 1.5]
   const irradiation = Math.max(0, Math.min(1.5, (100 - cloudPercent) / 100));
 
   try {
@@ -156,7 +165,6 @@ async function getMlSolarPrediction(temperature, cloudPercent) {
   } catch (error) {
     console.warn('ML prediction service unavailable, using fallback heuristic:', error.message);
 
-    // Fallback heuristic using irradiation and temperature
     const temperatureFactor = Math.max(0.6, 1 - Math.abs(temperature - 30) * 0.01);
     const predictedKw = Number((irradiation * 4.5 * temperatureFactor).toFixed(3));
 
@@ -168,16 +176,18 @@ async function getMlSolarPrediction(temperature, cloudPercent) {
   }
 }
 
-// Calculate solar ROI
 app.post('/api/calculate-roi', async (req, res) => {
   try {
-    const { location, monthlyBill } = req.body;
+    const { location, monthlyBill, systemSizeKW: requestedSystemSize } = req.body;
 
     if (!location || !monthlyBill || Number(monthlyBill) <= 0) {
       return res.status(400).json({ error: 'location and monthlyBill are required' });
     }
 
-    // Get weather data
+    if (requestedSystemSize !== undefined && (Number(requestedSystemSize) <= 0 || Number(requestedSystemSize) > 100)) {
+      return res.status(400).json({ error: 'systemSizeKW must be between 0 and 100' });
+    }
+
     const weatherResponse = await axios.get(
       `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${OPENWEATHER_API_KEY}&units=metric`
     );
@@ -185,31 +195,26 @@ app.post('/api/calculate-roi', async (req, res) => {
     const weatherData = weatherResponse.data;
     const state = weatherData.sys.country === 'IN' ? location.split(',')[0].trim() : 'Default';
 
-    // Calculate system size based on monthly bill
-    // Assumption: ₹6 per unit, average 5 units per day per kW
     const monthlyUnits = monthlyBill / 6;
     const dailyUnits = monthlyUnits / 30;
-    const systemSizeKW = dailyUnits / 5;
+    const recommendedSystemSizeKW = dailyUnits / 5;
+    const systemSizeKW = requestedSystemSize ? Number(requestedSystemSize) : recommendedSystemSizeKW;
 
-    // Cost calculations
-    const costPerKW = 50000; // ₹50,000 per kW
+    const costPerKW = 50000;
     const totalCost = systemSizeKW * costPerKW;
 
-    // Get subsidy info
     const subsidy = subsidyData[state] || subsidyData.Default;
     const subsidyAmount = Math.min((totalCost * subsidy.subsidy) / 100, subsidy.maxAmount);
     const netCost = totalCost - subsidyAmount;
 
-    // Calculate savings
-    const annualSavings = monthlyBill * 12 * 0.9; // 90% of current bill
+    const systemCoverageFactor = Math.max(0.35, Math.min(1, systemSizeKW / recommendedSystemSizeKW));
+    const annualSavings = monthlyBill * 12 * 0.9 * systemCoverageFactor;
     const paybackPeriod = netCost / annualSavings;
     const twentyYearSavings = (annualSavings * 20) - netCost;
 
-    // ML + weather-based generation
     const cloudPercent = weatherData.clouds?.all ?? 40;
     const mlPrediction = await getMlSolarPrediction(weatherData.main.temp, cloudPercent);
 
-    // Solar generation estimation (combines system sizing + weather signal)
     const avgSunHours = 5;
     const baseAnnualGeneration = systemSizeKW * avgSunHours * 365;
     const weatherFactor = Math.max(0.75, Math.min(1.15, mlPrediction.predictedKw / 4.0));
@@ -231,10 +236,12 @@ app.post('/api/calculate-roi', async (req, res) => {
       location: weatherData.name,
       input: {
         location,
-        monthlyBill: Number(monthlyBill)
+        monthlyBill: Number(monthlyBill),
+        systemSizeKW: Number(systemSizeKW.toFixed(2))
       },
       prediction: {
         systemSizeKW: Number(systemSizeKW.toFixed(2)),
+        recommendedSystemSizeKW: Number(recommendedSystemSizeKW.toFixed(2)),
         annualGeneration: Number(annualGeneration.toFixed(0)),
         outputCategory,
         paybackPeriod: Number(paybackPeriod.toFixed(1)),
@@ -256,6 +263,7 @@ app.post('/api/calculate-roi', async (req, res) => {
       },
       solarROI: {
         systemSizeKW: systemSizeKW.toFixed(2),
+        recommendedSystemSizeKW: recommendedSystemSizeKW.toFixed(2),
         totalCost: totalCost.toFixed(0),
         subsidyPercent: subsidy.subsidy,
         subsidyAmount: subsidyAmount.toFixed(0),
@@ -279,18 +287,16 @@ app.post('/api/calculate-roi', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error calculating ROI:', error.message);
+    console.error('Error calculating ROI:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to calculate ROI. Please check the location.' });
   }
 });
 
-// Fetch last predictions from local JSON store
 app.get('/api/predictions', (req, res) => {
   const records = loadPredictions();
   res.json({ count: records.length, records });
 });
 
-// Get weather forecast
 app.get('/api/weather-forecast', async (req, res) => {
   try {
     const { lat, lon } = req.query;
@@ -299,7 +305,6 @@ app.get('/api/weather-forecast', async (req, res) => {
       `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric`
     );
 
-    // Process forecast data for next 5 days
     const forecast = forecastResponse.data.list.filter((item, index) => index % 8 === 0).map(item => ({
       date: new Date(item.dt * 1000).toLocaleDateString(),
       temp: item.main.temp,
@@ -316,41 +321,37 @@ app.get('/api/weather-forecast', async (req, res) => {
   }
 });
 
-// Gemini AI Chatbot endpoint
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, context } = req.body;
 
-    const systemPrompt = 'You are a helpful solar energy advisor. You help users understand solar panel installation, ROI calculations, government subsidies, and make informed decisions about solar energy. Be concise, friendly, and informative.';
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const systemPrompt = 'You are a helpful solar energy advisor. You help users understand solar panel installation, ROI calculations, government subsidies, and informed decisions about clean energy. Keep responses concise, practical, and friendly.';
 
     const fullPrompt = context
       ? `Context: User is considering a ${context.systemSizeKW}kW solar system in ${context.location} with a payback period of ${context.paybackPeriod} years.\n\nUser question: ${message}`
-      : message;
+      : `User question: ${message}`;
 
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [{
-            text: `${systemPrompt}\n\n${fullPrompt}`
-          }]
-        }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
+    const aiResponse = await callGemini(`${systemPrompt}\n\n${fullPrompt}`);
 
-    const aiResponse = response.data.candidates[0].content.parts[0].text;
+    if (!aiResponse) {
+      return res.json({
+        response: 'I can help with solar sizing, ROI, subsidy eligibility, and installation planning. Add your GEMINI_API_KEY in the server environment to enable real-time Gemini answers.'
+      });
+    }
+
     res.json({ response: aiResponse });
   } catch (error) {
-    console.error('Error with Gemini API:', error.message);
+    console.error('Error with Gemini API:', error.response?.data || error.message);
     res.status(500).json({ error: 'Failed to get AI response' });
   }
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'Server is running', storage: 'local-json' });
+  res.json({ status: 'Server is running', storage: 'local-json', geminiModel: GEMINI_MODEL });
 });
 
 app.listen(PORT, () => {

@@ -135,6 +135,12 @@
   color: var(--color-primary);
 }
 
+.form-hint {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.82rem;
+  margin-top: -4px;
+}
+
 .btn-large {
   padding: 18px 36px;
   font-size: 18px;
