@@ -16,7 +16,7 @@ function ResultsPage() {
     return null;
   }
 
-  const { solarROI, subsidy, recommendation, weatherData } = data;
+  const { solarROI, subsidy, recommendation, weatherData, aiExplanation, applianceRecommendations = [], mlPrediction } = data;
 
   const stats = [
     {
@@ -115,6 +115,52 @@ function ResultsPage() {
               </div>
             ))}
           </div>
+        </div>
+
+
+        <div className="details-section fade-in-delay-2">
+          <h2 className="section-title">
+            <Zap size={24} />
+            AI Summary
+          </h2>
+          <div className="details-grid">
+            <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+              <span className="detail-label">Generation Category</span>
+              <span className="detail-value">{solarROI.outputCategory}</span>
+            </div>
+            <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+              <span className="detail-label">ML Signal Source</span>
+              <span className="detail-value">{mlPrediction?.source || 'n/a'}</span>
+            </div>
+          </div>
+          {aiExplanation && (
+            <div className="message-box" style={{ marginTop: '1rem' }}>
+              <Leaf size={24} />
+              <div>
+                <h4>Generative AI Insight</h4>
+                <p>{aiExplanation}</p>
+              </div>
+            </div>
+          )}
+
+          {applianceRecommendations.length > 0 && (
+            <div className="subsidy-section" style={{ marginTop: '1rem' }}>
+              <div className="subsidy-card">
+                <div className="subsidy-header">
+                  <Zap size={32} className="subsidy-icon" />
+                  <div>
+                    <h3>Appliance Usage Recommendations</h3>
+                    <p>Based on your predicted solar output profile</p>
+                  </div>
+                </div>
+                <ul>
+                  {applianceRecommendations.map((item, idx) => (
+                    <li key={idx} style={{ marginBottom: '0.6rem' }}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="subsidy-section fade-in-delay-3">
