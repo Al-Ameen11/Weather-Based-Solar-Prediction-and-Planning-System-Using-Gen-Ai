@@ -8,6 +8,7 @@ function HomePage() {
   const navigate = useNavigate();
   const [location, setLocation] = useState('');
   const [monthlyBill, setMonthlyBill] = useState('');
+  const [systemSizeKW, setSystemSizeKW] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -17,6 +18,11 @@ function HomePage() {
 
     if (!location || !monthlyBill) {
       setError('Please fill in all fields');
+      return;
+    }
+
+    if (systemSizeKW && Number(systemSizeKW) <= 0) {
+      setError('System size should be greater than 0 kW');
       return;
     }
 
@@ -30,7 +36,8 @@ function HomePage() {
     try {
       const response = await axios.post('/api/calculate-roi', {
         location,
-        monthlyBill: parseFloat(monthlyBill)
+        monthlyBill: parseFloat(monthlyBill),
+        systemSizeKW: systemSizeKW ? parseFloat(systemSizeKW) : undefined
       });
 
       navigate('/results', { state: { data: response.data } });
@@ -49,12 +56,6 @@ function HomePage() {
     }
   };
 
-  const quickQuestions = [
-    'What are the benefits of solar energy?',
-    'How much can I save with solar panels?',
-    'What subsidies are available?',
-    'How long do solar panels last?'
-  ];
 
   return (
     <div className="home-page">
@@ -123,6 +124,28 @@ function HomePage() {
                   min="0"
                   step="100"
                 />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="system-size">
+                  <Sun size={20} />
+                  Solar Panel Size (kW)
+                </label>
+                <input
+                  id="system-size"
+                  type="number"
+                  className="input-field"
+                  placeholder="Optional (e.g., 3.5)"
+                  value={systemSizeKW}
+                  onChange={(e) => setSystemSizeKW(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  disabled={loading}
+                  min="0"
+                  step="0.1"
+                />
+                <small className="form-hint">
+                  Leave empty to auto-calculate based on your monthly bill.
+                </small>
               </div>
 
               {error && (

@@ -8,7 +8,7 @@ function ChatBot() {
   const [messages, setMessages] = useState([
     {
       type: 'bot',
-      text: 'Hello! I\'m your solar energy advisor. Ask me anything about solar panels, ROI, subsidies, or installation!'
+      text: 'Hello! I\'m your solar energy advisor. Ask me about solar panels, ROI, subsidies, panel size selection, or installation planning.'
     }
   ]);
   const [input, setInput] = useState('');
@@ -21,34 +21,42 @@ function ChatBot() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  const sendMessage = async (nextMessage) => {
+    if (!nextMessage.trim() || loading) return;
 
-    const userMessage = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { type: 'user', text: userMessage }]);
+    setMessages((prev) => [...prev, { type: 'user', text: nextMessage }]);
     setLoading(true);
 
     try {
       const response = await axios.post('/api/chat', {
-        message: userMessage
+        message: nextMessage
       });
 
-      setMessages(prev => [...prev, { type: 'bot', text: response.data.response }]);
+      setMessages((prev) => [...prev, { type: 'bot', text: response.data.response }]);
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, { 
-        type: 'bot', 
-        text: 'Sorry, I encountered an error. Please try again.' 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: 'bot',
+          text: 'Sorry, I encountered an error while contacting the AI service. Please try again.'
+        }
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleSend = async () => {
+    const userMessage = input.trim();
+    if (!userMessage) return;
+    setInput('');
+    await sendMessage(userMessage);
+  };
+
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -56,22 +64,20 @@ function ChatBot() {
   };
 
   const quickQuestions = [
-    'What are the benefits of solar energy?',
+    'What system size should I choose for my home?',
     'How much can I save with solar panels?',
-    'What subsidies are available?',
+    'What subsidies are available in India?',
     'How long do solar panels last?'
   ];
 
-  const handleQuickQuestion = (question) => {
-    setInput(question);
+  const handleQuickQuestion = async (question) => {
+    if (loading) return;
+    await sendMessage(question);
   };
 
   return (
     <>
-      <button 
-        className={`chatbot-toggle ${isOpen ? 'open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
-      >
+      <button className={`chatbot-toggle ${isOpen ? 'open' : ''}`} onClick={() => setIsOpen(!isOpen)}>
         {isOpen ? <X size={24} /> : <MessageCircle size={24} />}
       </button>
 
@@ -81,7 +87,7 @@ function ChatBot() {
             <Bot size={24} />
             <div>
               <h3>Solar AI Advisor</h3>
-              <p>Powered by Gemini</p>
+              <p>Powered by Gemini API</p>
             </div>
           </div>
         </div>
@@ -89,12 +95,8 @@ function ChatBot() {
         <div className="chatbot-messages">
           {messages.map((message, index) => (
             <div key={index} className={`message ${message.type}`}>
-              <div className="message-icon">
-                {message.type === 'bot' ? <Bot size={20} /> : <User size={20} />}
-              </div>
-              <div className="message-content">
-                {message.text}
-              </div>
+              <div className="message-icon">{message.type === 'bot' ? <Bot size={20} /> : <User size={20} />}</div>
+              <div className="message-content">{message.text}</div>
             </div>
           ))}
           {loading && (
@@ -114,15 +116,11 @@ function ChatBot() {
           <div ref={messagesEndRef} />
         </div>
 
-        {messages.length === 1 && (
+        {messages.length <= 2 && (
           <div className="quick-questions">
-            <p>Quick questions:</p>
+            <p>Quick questions</p>
             {quickQuestions.map((question, index) => (
-              <button
-                key={index}
-                className="quick-question-btn"
-                onClick={() => handleQuickQuestion(question)}
-              >
+              <button key={index} className="quick-question-btn" onClick={() => handleQuickQuestion(question)}>
                 {question}
               </button>
             ))}
@@ -134,15 +132,11 @@ function ChatBot() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Ask me anything about solar energy..."
+            onKeyDown={handleKeyDown}
+            placeholder="Ask about savings, size, subsidies..."
             disabled={loading}
           />
-          <button 
-            onClick={handleSend} 
-            disabled={loading || !input.trim()}
-            className="send-button"
-          >
+          <button onClick={handleSend} disabled={loading || !input.trim()} className="send-button" aria-label="Send message">
             <Send size={20} />
           </button>
         </div>
