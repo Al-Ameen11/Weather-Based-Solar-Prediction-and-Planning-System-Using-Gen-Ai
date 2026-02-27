@@ -14,7 +14,12 @@ async function getWeatherForecast(req, res) {
       windSpeed: item.wind.speed
     }));
 
-    return res.json({ forecast, usageAlerts: getForecastUsageAlerts(rawList) });
+    const usageAlerts = req.user ? getForecastUsageAlerts(rawList) : [];
+    return res.json({
+      forecast,
+      usageAlerts,
+      authMessage: req.user ? null : 'Sign in to unlock smart appliance alerts.'
+    });
   } catch (error) {
     console.error('Error fetching forecast:', error.message);
     return res.status(500).json({ error: 'Failed to fetch weather forecast' });

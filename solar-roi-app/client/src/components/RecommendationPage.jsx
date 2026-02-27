@@ -15,6 +15,7 @@ function RecommendationPage() {
   
   const [forecast, setForecast] = useState([]);
   const [usageAlerts, setUsageAlerts] = useState([]);
+  const [authMessage, setAuthMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -30,9 +31,13 @@ function RecommendationPage() {
   const fetchWeatherForecast = async () => {
     try {
       const { lat, lon } = data.weatherData.coordinates;
-      const response = await axios.get(`/api/weather-forecast?lat=${lat}&lon=${lon}`);
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`/api/weather-forecast?lat=${lat}&lon=${lon}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       setForecast(response.data.forecast);
       setUsageAlerts(response.data.usageAlerts || []);
+      setAuthMessage(response.data.authMessage || '');
       setLoading(false);
     } catch (err) {
       setError('Failed to fetch weather forecast');
@@ -135,6 +140,17 @@ function RecommendationPage() {
               })}
             </div>
 
+
+
+            {authMessage && (
+              <div className="info-box fade-in-delay-2">
+                <AlertCircle size={24} />
+                <div>
+                  <h3>Unlock Smart Alerts</h3>
+                  <p>{authMessage}</p>
+                </div>
+              </div>
+            )}
 
             {usageAlerts.length > 0 && (
               <div className="recommendation-box fade-in-delay-2">

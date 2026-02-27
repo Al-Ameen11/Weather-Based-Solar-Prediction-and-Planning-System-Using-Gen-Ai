@@ -11,7 +11,7 @@ function hasMongoDataApiConfig() {
   return Boolean(MONGODB_DATA_API_URL && MONGODB_DATA_API_KEY);
 }
 
-async function callMongoDataApi(action, payload) {
+async function callMongoDataApi(action, payload, collection = MONGODB_COLLECTION) {
   const endpoint = `${MONGODB_DATA_API_URL.replace(/\/$/, '')}/action/${action}`;
 
   const response = await axios.post(
@@ -19,7 +19,7 @@ async function callMongoDataApi(action, payload) {
     {
       dataSource: MONGODB_DATA_SOURCE,
       database: MONGODB_DATABASE,
-      collection: MONGODB_COLLECTION,
+      collection,
       ...payload
     },
     {

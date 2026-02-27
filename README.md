@@ -69,3 +69,24 @@ If these are not set, app falls back to:
 ## Abstract Fit & Implementation Checklist
 
 See `PROJECT_CHECKLIST.md`.
+
+
+## Authentication
+
+- `POST /api/auth/signup`
+- `POST /api/auth/signin`
+
+Signed-out users can still use ROI calculator, GenAI chat, and general forecast.
+Signed-in users can access:
+
+- Existing-user generation dashboard (`/dashboard` UI, `/api/existing-user-dashboard` API)
+- Smart usage alert windows in forecast API responses
+
+### .env additions
+
+Add these variables to your existing `.env`:
+
+- `JWT_SECRET=your_strong_secret`
+- `AUTH_TOKEN_TTL_HOURS=72`
+
+Existing integrations remain the same (`OPENWEATHER_API_KEY`, `GEMINI_API_KEY`, ML and MongoDB Data API settings).

@@ -14,7 +14,8 @@ function HomePage() {
 
   useEffect(() => {
     const raw = localStorage.getItem('solarUserProfile');
-    if (raw) {
+    const token = localStorage.getItem('authToken');
+    if (raw && token) {
       navigate('/dashboard');
     }
   }, [navigate]);

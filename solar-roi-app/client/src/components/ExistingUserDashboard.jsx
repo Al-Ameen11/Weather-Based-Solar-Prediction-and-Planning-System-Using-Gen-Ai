@@ -9,7 +9,12 @@ function ExistingUserDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const token = localStorage.getItem('authToken');
     const raw = localStorage.getItem('solarUserProfile');
+    if (!token) {
+      navigate('/signin');
+      return;
+    }
     if (!raw) {
       navigate('/');
       return;
@@ -21,9 +26,13 @@ function ExistingUserDashboard() {
         location: profile.location,
         monthlyBill: profile.monthlyBill,
         systemSizeKW: profile.systemSizeKW
-      }
+      },
+      headers: { Authorization: `Bearer ${token}` }
     }).then((res) => setData(res.data))
-      .catch(() => setError('Could not load existing user dashboard.'));
+      .catch((err) => {
+        if (err.response?.status === 401) navigate('/signin');
+        else setError('Could not load existing user dashboard.');
+      });
   }, []);
 
   if (error) return <div style={{ padding: '2rem' }}>{error}</div>;
