@@ -16,6 +16,12 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5000/predict';
 
+const MONGODB_DATA_API_URL = process.env.MONGODB_DATA_API_URL || '';
+const MONGODB_DATA_API_KEY = process.env.MONGODB_DATA_API_KEY || '';
+const MONGODB_DATA_SOURCE = process.env.MONGODB_DATA_SOURCE || 'Cluster0';
+const MONGODB_DATABASE = process.env.MONGODB_DATABASE || 'solar_roi';
+const MONGODB_COLLECTION = process.env.MONGODB_COLLECTION || 'predictions';
+
 const dataDir = path.join(__dirname, 'data');
 const predictionsFile = path.join(dataDir, 'predictions.json');
 
@@ -38,7 +44,34 @@ function ensureDataStore() {
   }
 }
 
-function loadPredictions() {
+function hasMongoDataApiConfig() {
+  return Boolean(MONGODB_DATA_API_URL && MONGODB_DATA_API_KEY);
+}
+
+async function callMongoDataApi(action, payload) {
+  const endpoint = `${MONGODB_DATA_API_URL.replace(/\/$/, '')}/action/${action}`;
+
+  const response = await axios.post(
+    endpoint,
+    {
+      dataSource: MONGODB_DATA_SOURCE,
+      database: MONGODB_DATABASE,
+      collection: MONGODB_COLLECTION,
+      ...payload
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': MONGODB_DATA_API_KEY
+      },
+      timeout: 8000
+    }
+  );
+
+  return response.data;
+}
+
+function loadPredictionsFromFile() {
   ensureDataStore();
 
   try {
@@ -51,12 +84,45 @@ function loadPredictions() {
   }
 }
 
-function savePrediction(record) {
-  const records = loadPredictions();
+function savePredictionToFile(record) {
+  const records = loadPredictionsFromFile();
   records.unshift(record);
 
   const trimmed = records.slice(0, 100);
   fs.writeFileSync(predictionsFile, JSON.stringify(trimmed, null, 2), 'utf-8');
+}
+
+async function loadPredictions() {
+  if (!hasMongoDataApiConfig()) {
+    return loadPredictionsFromFile();
+  }
+
+  try {
+    const response = await callMongoDataApi('find', {
+      filter: {},
+      sort: { createdAt: -1 },
+      limit: 100
+    });
+
+    return Array.isArray(response.documents) ? response.documents : [];
+  } catch (error) {
+    console.error('MongoDB read failed, falling back to local JSON:', error.response?.data || error.message);
+    return loadPredictionsFromFile();
+  }
+}
+
+async function savePrediction(record) {
+  if (!hasMongoDataApiConfig()) {
+    savePredictionToFile(record);
+    return;
+  }
+
+  try {
+    await callMongoDataApi('insertOne', { document: record });
+  } catch (error) {
+    console.error('MongoDB write failed, falling back to local JSON:', error.response?.data || error.message);
+    savePredictionToFile(record);
+  }
 }
 
 function getSolarOutputCategory(annualGeneration) {
@@ -85,6 +151,68 @@ function getApplianceRecommendations(outputCategory) {
   };
 
   return base[outputCategory] || base.Medium;
+}
+
+function extractStateFromLocation(locationInput = '') {
+  const parts = String(locationInput)
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) return null;
+  const candidate = parts[1].replace(/\b(india|in)\b/gi, '').trim();
+  return candidate || null;
+}
+
+async function getIndianStateFromCoordinates(lat, lon) {
+  if (!OPENWEATHER_API_KEY || OPENWEATHER_API_KEY === 'YOUR_OPENWEATHER_API_KEY') {
+    return null;
+  }
+
+  try {
+    const response = await axios.get(
+      `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OPENWEATHER_API_KEY}`,
+      { timeout: 6000 }
+    );
+
+    return response.data?.[0]?.state || null;
+  } catch (error) {
+    console.warn('Reverse geocoding state lookup failed:', error.message);
+    return null;
+  }
+}
+
+function getForecastUsageAlerts(forecastList) {
+  if (!Array.isArray(forecastList) || forecastList.length === 0) {
+    return [];
+  }
+
+  const upcomingSlots = forecastList.slice(0, 16);
+  const highPotentialSlots = upcomingSlots
+    .filter((slot) => slot.clouds?.all <= 35)
+    .slice(0, 3)
+    .map((slot) => ({
+      time: new Date(slot.dt * 1000).toLocaleString(),
+      cloudPercent: slot.clouds?.all ?? 0,
+      temp: slot.main?.temp ?? 0
+    }));
+
+  if (highPotentialSlots.length === 0) {
+    return [
+      {
+        level: 'moderate',
+        message: 'Cloud cover is moderate/high in the next day. Prioritize essential loads and avoid heavy daytime deferrable usage.'
+      }
+    ];
+  }
+
+  return [
+    {
+      level: 'high',
+      message: 'High solar window detected. Plan high-consumption appliances during these time blocks.',
+      windows: highPotentialSlots
+    }
+  ];
 }
 
 async function callGemini(prompt) {
@@ -134,6 +262,7 @@ System size: ${systemSizeKW} kW
 Estimated annual generation: ${annualGeneration} kWh (${outputCategory})
 Annual savings: ₹${annualSavings}
 Payback period: ${paybackPeriod} years
+Include a short caution that final savings depend on tariffs, installation quality, and usage habits.
 Keep it practical and encouraging.`;
 
   try {
@@ -193,7 +322,12 @@ app.post('/api/calculate-roi', async (req, res) => {
     );
 
     const weatherData = weatherResponse.data;
-    const state = weatherData.sys.country === 'IN' ? location.split(',')[0].trim() : 'Default';
+
+    let state = 'Default';
+    if (weatherData.sys.country === 'IN') {
+      const reverseState = await getIndianStateFromCoordinates(weatherData.coord.lat, weatherData.coord.lon);
+      state = reverseState || extractStateFromLocation(location) || 'Default';
+    }
 
     const monthlyUnits = monthlyBill / 6;
     const dailyUnits = monthlyUnits / 30;
@@ -211,6 +345,7 @@ app.post('/api/calculate-roi', async (req, res) => {
     const annualSavings = monthlyBill * 12 * 0.9 * systemCoverageFactor;
     const paybackPeriod = netCost / annualSavings;
     const twentyYearSavings = (annualSavings * 20) - netCost;
+    const roiPercent = netCost > 0 ? (twentyYearSavings / netCost) * 100 : 0;
 
     const cloudPercent = weatherData.clouds?.all ?? 40;
     const mlPrediction = await getMlSolarPrediction(weatherData.main.temp, cloudPercent);
@@ -230,6 +365,14 @@ app.post('/api/calculate-roi', async (req, res) => {
       systemSizeKW: systemSizeKW.toFixed(2)
     });
 
+    const assumptions = {
+      costPerKW,
+      avgSunHours,
+      tariffPerUnit: 6,
+      savingsFactor: 0.9,
+      subsidyDisclaimer: 'Subsidy schemes vary by policy updates and may change over time. Verify with official state and MNRE portals before purchase.'
+    };
+
     const record = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       createdAt: new Date().toISOString(),
@@ -245,11 +388,12 @@ app.post('/api/calculate-roi', async (req, res) => {
         annualGeneration: Number(annualGeneration.toFixed(0)),
         outputCategory,
         paybackPeriod: Number(paybackPeriod.toFixed(1)),
-        annualSavings: Number(annualSavings.toFixed(0))
+        annualSavings: Number(annualSavings.toFixed(0)),
+        roiPercent: Number(roiPercent.toFixed(1))
       }
     };
 
-    savePrediction(record);
+    await savePrediction(record);
 
     res.json({
       location: weatherData.name,
@@ -271,12 +415,14 @@ app.post('/api/calculate-roi', async (req, res) => {
         annualSavings: annualSavings.toFixed(0),
         paybackPeriod: paybackPeriod.toFixed(1),
         twentyYearSavings: twentyYearSavings.toFixed(0),
+        roiPercent: roiPercent.toFixed(1),
         annualGeneration: annualGeneration.toFixed(0),
         outputCategory,
         co2Offset: (annualGeneration * 0.82 / 1000).toFixed(2)
       },
       mlPrediction,
       subsidy,
+      assumptions,
       aiExplanation: explanation,
       applianceRecommendations: getApplianceRecommendations(outputCategory),
       recommendation: {
@@ -292,8 +438,8 @@ app.post('/api/calculate-roi', async (req, res) => {
   }
 });
 
-app.get('/api/predictions', (req, res) => {
-  const records = loadPredictions();
+app.get('/api/predictions', async (req, res) => {
+  const records = await loadPredictions();
   res.json({ count: records.length, records });
 });
 
@@ -305,7 +451,8 @@ app.get('/api/weather-forecast', async (req, res) => {
       `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric`
     );
 
-    const forecast = forecastResponse.data.list.filter((item, index) => index % 8 === 0).map(item => ({
+    const rawList = forecastResponse.data.list || [];
+    const forecast = rawList.filter((item, index) => index % 8 === 0).map((item) => ({
       date: new Date(item.dt * 1000).toLocaleDateString(),
       temp: item.main.temp,
       humidity: item.main.humidity,
@@ -314,7 +461,9 @@ app.get('/api/weather-forecast', async (req, res) => {
       windSpeed: item.wind.speed
     }));
 
-    res.json({ forecast });
+    const usageAlerts = getForecastUsageAlerts(rawList);
+
+    res.json({ forecast, usageAlerts });
   } catch (error) {
     console.error('Error fetching forecast:', error.message);
     res.status(500).json({ error: 'Failed to fetch weather forecast' });
@@ -329,7 +478,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'message is required' });
     }
 
-    const systemPrompt = 'You are a helpful solar energy advisor. You help users understand solar panel installation, ROI calculations, government subsidies, and informed decisions about clean energy. Keep responses concise, practical, and friendly.';
+    const systemPrompt = 'You are a helpful solar energy advisor. You help users understand solar panel installation, ROI calculations, government subsidies, and informed decisions about clean energy. Keep responses concise, practical, and friendly. Always add a short disclaimer that estimates and subsidies should be verified with local installer quotes and government portals.';
 
     const fullPrompt = context
       ? `Context: User is considering a ${context.systemSizeKW}kW solar system in ${context.location} with a payback period of ${context.paybackPeriod} years.\n\nUser question: ${message}`
@@ -339,7 +488,7 @@ app.post('/api/chat', async (req, res) => {
 
     if (!aiResponse) {
       return res.json({
-        response: 'I can help with solar sizing, ROI, subsidy eligibility, and installation planning. Add your GEMINI_API_KEY in the server environment to enable real-time Gemini answers.'
+        response: 'I can help with solar sizing, ROI, subsidy eligibility, and installation planning. Add your GEMINI_API_KEY in the server environment to enable real-time Gemini answers. Please verify final costs and subsidies with local installers and official government portals.'
       });
     }
 
@@ -351,10 +500,19 @@ app.post('/api/chat', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'Server is running', storage: 'local-json', geminiModel: GEMINI_MODEL });
+  res.json({
+    status: 'Server is running',
+    storage: hasMongoDataApiConfig() ? 'mongodb-data-api' : 'local-json-fallback',
+    geminiModel: GEMINI_MODEL
+  });
 });
 
 app.listen(PORT, () => {
   ensureDataStore();
   console.log(`Server running on port ${PORT}`);
+  if (hasMongoDataApiConfig()) {
+    console.log('MongoDB integration enabled via Data API.');
+  } else {
+    console.warn('MongoDB Data API env vars are missing; using local JSON fallback storage.');
+  }
 });

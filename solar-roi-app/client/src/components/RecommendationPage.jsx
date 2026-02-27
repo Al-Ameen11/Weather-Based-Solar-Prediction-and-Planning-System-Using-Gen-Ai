@@ -14,6 +14,7 @@ function RecommendationPage() {
   const data = location.state?.data;
   
   const [forecast, setForecast] = useState([]);
+  const [usageAlerts, setUsageAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -31,6 +32,7 @@ function RecommendationPage() {
       const { lat, lon } = data.weatherData.coordinates;
       const response = await axios.get(`/api/weather-forecast?lat=${lat}&lon=${lon}`);
       setForecast(response.data.forecast);
+      setUsageAlerts(response.data.usageAlerts || []);
       setLoading(false);
     } catch (err) {
       setError('Failed to fetch weather forecast');
@@ -132,6 +134,30 @@ function RecommendationPage() {
                 );
               })}
             </div>
+
+
+            {usageAlerts.length > 0 && (
+              <div className="recommendation-box fade-in-delay-2">
+                <div className="recommendation-header">
+                  <AlertCircle size={24} />
+                  <h3>Smart Appliance Alerts</h3>
+                </div>
+                {usageAlerts.map((alert, index) => (
+                  <div key={index} style={{ marginBottom: '0.8rem' }}>
+                    <p>{alert.message}</p>
+                    {alert.windows && alert.windows.length > 0 && (
+                      <ul>
+                        {alert.windows.map((slot, idx) => (
+                          <li key={idx}>
+                            {slot.time} · Clouds: {slot.cloudPercent}% · Temp: {Math.round(slot.temp)}°C
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="chart-section fade-in-delay-2">
               <h2 className="chart-title">
