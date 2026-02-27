@@ -42,6 +42,12 @@ function ResultsPage() {
       label: '20-Year Savings',
       value: `₹${parseFloat(solarROI.twentyYearSavings).toLocaleString('en-IN')}`,
       color: '#00D9A3'
+    },
+    {
+      icon: <Award size={28} />,
+      label: 'ROI (20Y)',
+      value: `${solarROI.roiPercent}%`,
+      color: '#7C3AED'
     }
   ];
 
@@ -51,7 +57,8 @@ function ResultsPage() {
     { label: 'Government Subsidy', value: `₹${parseFloat(solarROI.subsidyAmount).toLocaleString('en-IN')} (${subsidy.subsidy}%)` },
     { label: 'Annual Savings', value: `₹${parseFloat(solarROI.annualSavings).toLocaleString('en-IN')}` },
     { label: 'Annual Generation', value: `${parseFloat(solarROI.annualGeneration).toLocaleString('en-IN')} kWh` },
-    { label: 'CO₂ Offset per Year', value: `${solarROI.co2Offset} tons` }
+    { label: 'CO₂ Offset per Year', value: `${solarROI.co2Offset} tons` },
+    { label: '20-Year ROI', value: `${solarROI.roiPercent}%` }
   ];
 
   return (
@@ -188,6 +195,21 @@ function ResultsPage() {
             <ArrowRight size={20} />
           </button>
         </div>
+
+
+        {data.assumptions && (
+          <div className="message-box fade-in-delay-3">
+            <Leaf size={24} />
+            <div>
+              <h4>Calculation Assumptions</h4>
+              <p>
+                Cost assumed at ₹{data.assumptions.costPerKW}/kW, average sun hours {data.assumptions.avgSunHours}/day,
+                tariff at ₹{data.assumptions.tariffPerUnit}/unit and savings factor {Math.round(data.assumptions.savingsFactor * 100)}%.
+              </p>
+              <p>{data.assumptions.subsidyDisclaimer}</p>
+            </div>
+          </div>
+        )}
 
         <div className="message-box fade-in-delay-3">
           <Leaf size={24} />

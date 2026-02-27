@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sun, Zap, TrendingUp, MapPin, IndianRupee } from 'lucide-react';
 import axios from 'axios';
@@ -11,6 +11,13 @@ function HomePage() {
   const [systemSizeKW, setSystemSizeKW] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const raw = localStorage.getItem('solarUserProfile');
+    if (raw) {
+      navigate('/dashboard');
+    }
+  }, [navigate]);
 
   const handleCalculate = async (e) => {
     e.preventDefault();
@@ -39,6 +46,12 @@ function HomePage() {
         monthlyBill: parseFloat(monthlyBill),
         systemSizeKW: systemSizeKW ? parseFloat(systemSizeKW) : undefined
       });
+
+      localStorage.setItem('solarUserProfile', JSON.stringify({
+        location,
+        monthlyBill: parseFloat(monthlyBill),
+        systemSizeKW: response.data?.solarROI?.systemSizeKW ? parseFloat(response.data.solarROI.systemSizeKW) : undefined
+      }));
 
       navigate('/results', { state: { data: response.data } });
     } catch (err) {

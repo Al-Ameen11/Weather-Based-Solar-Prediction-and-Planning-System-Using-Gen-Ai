@@ -9,7 +9,8 @@ function NavBar() {
   const links = [
     { to: '/', label: 'Calculator' },
     { to: '/results', label: 'Results' },
-    { to: '/recommendations', label: 'Forecast' }
+    { to: '/recommendations', label: 'Forecast' },
+    { to: '/dashboard', label: 'Dashboard' }
   ];
 
   return (
