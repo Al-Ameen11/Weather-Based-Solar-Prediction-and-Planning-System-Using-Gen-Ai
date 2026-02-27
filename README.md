@@ -1,39 +1,60 @@
 # Weather-Based Solar Energy Prediction and Planning System
 
-This project provides a web-based decision support system for rooftop solar planning using:
+This project provides a web-based decision support platform for both:
 
-- **React** dashboard for user inputs and result visualization.
-- **Node.js + Express** backend APIs.
-- **OpenWeather API** for real-time weather signals.
-- **Python Random Forest model** for solar generation signal prediction.
-- **Generative AI (Gemini)** for plain-language explanation and guidance.
-- **MongoDB integration** via MongoDB Data API for prediction history storage.
+- **New users** planning first-time solar installation (sizing + ROI + subsidy + explainability)
+- **Existing users** optimizing daily usage (forecasted generation + smart usage alerts + efficiency guidance)
 
-## Key Flow
+## Stack
 
-1. User submits location and monthly electricity bill.
-2. Backend fetches weather from OpenWeather.
-3. Backend requests prediction from Python ML service (`/predict`) and computes annual generation + ROI.
-4. Backend returns:
-   - system sizing,
-   - estimated cost and subsidy,
-   - annual savings and payback,
-   - generation category (High/Medium/Low),
-   - appliance recommendations,
-   - AI explanation.
-5. Backend stores recent prediction history in MongoDB (with local JSON fallback when MongoDB env is not configured).
+- **React (Frontend)** dashboard and chatbot UI
+- **Node.js + Express (Backend API)**
+- **MongoDB (Data API)** for prediction history persistence (with local JSON fallback)
+- **Python ML service** for weather-driven solar generation signal
+- **OpenWeather API** for live weather and forecast
+- **Gemini API** for plain-language advisory
 
-## Backend Endpoints
+## Backend Architecture (MVC)
 
-- `POST /api/calculate-roi` – main prediction + ROI + AI explanation.
-- `GET /api/weather-forecast` – 5-day weather forecast.
-- `POST /api/chat` – solar advisory chatbot.
-- `GET /api/predictions` – latest predictions from MongoDB (or fallback local JSON).
-- `GET /health` – server health status.
+Server code is organized with controller/model/routes separation:
 
-## MongoDB Storage
+- `server/controllers/*` – request handlers
+- `server/models/predictionStore.js` – persistence layer (MongoDB Data API + fallback)
+- `server/routes/*` – endpoint routing
+- `server/services/*` – business/service integrations (AI, weather, ML, Mongo)
+- `server/config/constants.js` – env configuration
 
-Prediction records are stored using **MongoDB Data API** when these environment variables are configured on the server:
+## Core User Flows
+
+### 1) New Users (Solar Planning)
+
+1. User enters only **location** + **monthly electricity bill**.
+2. System computes recommended solar size (kW).
+3. System returns ROI map (cost, subsidy, annual savings, payback years, ROI %).
+4. AI advisor explains technical terms in simple language.
+
+### 2) Existing Users (Operational Optimization)
+
+1. Returning users are routed to dashboard using saved profile.
+2. System shows saved ROI status and CO₂ savings context.
+3. System forecasts tomorrow generation from weather + ML signal.
+4. AI-backed smart usage alerts recommend heavy appliance timing.
+5. In cloudy/monsoon-like windows, system advises grid-saving mode.
+
+## Key Endpoints
+
+- `POST /api/calculate-roi` – planning flow for new users
+- `GET /api/existing-user-dashboard` – operational dashboard for existing users
+- `GET /api/weather-forecast` – 5-day forecast + usage alerts
+- `GET /api/solar-glossary` – simple educational terms (kW, on-grid, ROI)
+- `GET /api/latest-roi-status` – latest saved ROI status
+- `POST /api/chat` – AI advisor chat
+- `GET /api/predictions` – history records
+- `GET /health` – service health + storage mode
+
+## MongoDB Data API Configuration
+
+Set these in server environment:
 
 - `MONGODB_DATA_API_URL`
 - `MONGODB_DATA_API_KEY`
@@ -41,12 +62,10 @@ Prediction records are stored using **MongoDB Data API** when these environment 
 - `MONGODB_DATABASE` (default: `solar_roi`)
 - `MONGODB_COLLECTION` (default: `predictions`)
 
-If MongoDB Data API variables are not set, the server automatically falls back to local JSON storage at:
+If these are not set, app falls back to:
 
 - `solar-roi-app/server/data/predictions.json`
 
 ## Abstract Fit & Implementation Checklist
 
-For a structured implementation checklist and gap analysis against the project abstract, see:
-
-- `PROJECT_CHECKLIST.md`
+See `PROJECT_CHECKLIST.md`.
